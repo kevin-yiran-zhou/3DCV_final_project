@@ -1,0 +1,1 @@
+python main.py --dataset /home/kevin-zhou/Downloads/${name}.mp4 --config config/base.yaml
