@@ -156,11 +156,10 @@ class SegmentApp:
                 tk.Label(self.result_label, text="Predicted class distribution:", font=MONO_FONT).pack(pady=(0, 10))
 
                 for cls, count in zip(unique, counts):
-                    label = s3dis_classes.get(cls, "unknown")
                     rgb = cmap(cls)[:3]  # Ignore alpha
                     rgb = tuple(int(255 * c) for c in rgb)
                     hex_color = '#%02x%02x%02x' % rgb
-                    text = f"Class {cls:2d} ({label:<10}): {count:5d} points"
+                    text = f"Class {cls:2d} ({s3dis_classes[cls]}): {count:5d} points"
                     tk.Label(self.result_label, text=text, font=MONO_FONT, fg=hex_color).pack()
 
                 # Show the Open3D window in a separate thread
