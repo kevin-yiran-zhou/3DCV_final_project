@@ -64,8 +64,16 @@ class SegmentApp:
 
     def preprocess_point_cloud(self, pcd):
         # === Downsample ===
-        voxel_size = 0.02  # adjust this based on your data resolution
+        voxel_size = 0.02
         pcd = pcd.voxel_down_sample(voxel_size)
+
+        # === Optional: smooth to reduce jagged edges ===
+        pcd = self.smooth_point_cloud(pcd, radius=0.05)
+
+        # === Normals ===
+        pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+        pcd.orient_normals_consistent_tangent_plane(k=30)
+        pcd.normalize_normals()
 
         # === Remove outliers ===
         pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
@@ -76,6 +84,25 @@ class SegmentApp:
         points -= centroid
         pcd.points = o3d.utility.Vector3dVector(points)
 
+        return pcd
+
+    def smooth_point_cloud(self, pcd, radius=0.05):
+        """
+        简单的点云平滑操作：对每个点的邻域点取平均位置
+        """
+        kdtree = o3d.geometry.KDTreeFlann(pcd)
+        points = np.asarray(pcd.points)
+        smoothed_points = []
+
+        for i in range(len(points)):
+            _, idx, _ = kdtree.search_radius_vector_3d(pcd.points[i], radius)
+            if len(idx) > 3:
+                neighbor_pts = points[idx]
+                smoothed_points.append(np.mean(neighbor_pts, axis=0))
+            else:
+                smoothed_points.append(points[i])  # 太孤立不动它
+
+        pcd.points = o3d.utility.Vector3dVector(np.array(smoothed_points))
         return pcd
 
     def visualize_pcd(self):
