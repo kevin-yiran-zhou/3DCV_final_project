@@ -9,6 +9,7 @@ import open3d.ml as ml3d
 import matplotlib.pyplot as plt
 import os
 import threading
+import json
 
 ModelClasses = [KPFCNN, PointTransformer, RandLANet]
 model_keywords = ["kpconv", "pointtransformer", "randlanet"]
@@ -61,6 +62,24 @@ class SegmentApp:
             self.pcd_path.set(path)
             filename = os.path.basename(path)
             self.pcd_label.config(text=f"Selected point cloud: {filename}", fg="black")
+    
+    def load_view_params(self, ply_path):
+        json_path = os.path.splitext(ply_path)[0] + ".json"
+        if not os.path.exists(json_path):
+            return None
+        try:
+            with open(json_path, 'r') as f:
+                view_data = json.load(f)
+            traj = view_data.get("trajectory", [{}])[0]
+            return {
+                "zoom": traj.get("zoom", 0.5),
+                "front": traj.get("front", [0, 0, -1]),
+                "lookat": traj.get("lookat", [0, 0, 0]),
+                "up": traj.get("up", [0, -1, 0]),
+            }
+        except Exception as e:
+            messagebox.showwarning("View JSON Load Warning", f"Failed to load view parameters:\n{e}")
+            return None
 
     def preprocess_point_cloud(self, pcd):
         # === Downsample ===
@@ -68,12 +87,12 @@ class SegmentApp:
         pcd = pcd.voxel_down_sample(voxel_size)
 
         # === Optional: smooth to reduce jagged edges ===
-        pcd = self.smooth_point_cloud(pcd, radius=0.05)
+        # pcd = self.smooth_point_cloud(pcd, radius=0.05)
 
         # === Normals ===
-        pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
-        pcd.orient_normals_consistent_tangent_plane(k=30)
-        pcd.normalize_normals()
+        # pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+        # pcd.orient_normals_consistent_tangent_plane(k=30)
+        # pcd.normalize_normals()
 
         # === Remove outliers ===
         pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
@@ -87,9 +106,6 @@ class SegmentApp:
         return pcd
 
     def smooth_point_cloud(self, pcd, radius=0.05):
-        """
-        简单的点云平滑操作：对每个点的邻域点取平均位置
-        """
         kdtree = o3d.geometry.KDTreeFlann(pcd)
         points = np.asarray(pcd.points)
         smoothed_points = []
@@ -100,7 +116,7 @@ class SegmentApp:
                 neighbor_pts = points[idx]
                 smoothed_points.append(np.mean(neighbor_pts, axis=0))
             else:
-                smoothed_points.append(points[i])  # 太孤立不动它
+                smoothed_points.append(points[i])
 
         pcd.points = o3d.utility.Vector3dVector(np.array(smoothed_points))
         return pcd
@@ -111,7 +127,15 @@ class SegmentApp:
             if not path or not os.path.isfile(path):
                 raise FileNotFoundError("No valid point cloud file selected.")
             pcd = o3d.io.read_point_cloud(path)
-            o3d.visualization.draw_geometries([pcd])
+            view = self.load_view_params(path)
+            if view:
+                o3d.visualization.draw_geometries([pcd],
+                                                zoom=view["zoom"],
+                                                front=view["front"],
+                                                lookat=view["lookat"],
+                                                up=view["up"])
+            else:
+                o3d.visualization.draw_geometries([pcd])
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -132,7 +156,7 @@ class SegmentApp:
     def run_segmentation(self):
         def task():
             try:
-                self.status_label.config(text="Running...", fg="orange")
+                self.status_label.config(text="Start Running...", fg="orange")
                 for widget in self.result_label.winfo_children():
                     widget.destroy()
                 self.master.update_idletasks()
@@ -140,7 +164,9 @@ class SegmentApp:
                 model_keyword = model_keywords[self.model_index.get()]
                 yml_path, pth_path = self.find_model_files(model_keyword)
 
+                self.status_label.config(text="Loading data...", fg="orange")
                 pcd = o3d.io.read_point_cloud(self.pcd_path.get())
+                self.status_label.config(text="Preprocessing data...", fg="orange")
                 pcd = self.preprocess_point_cloud(pcd)
 
                 points = np.asarray(pcd.points).astype(np.float32)
@@ -152,6 +178,7 @@ class SegmentApp:
                     "label": torch.zeros((points.shape[0],), dtype=torch.int32)
                 }
 
+                self.status_label.config(text="Segmenting...", fg="orange")
                 cfg = ml3d.utils.Config.load_from_file(yml_path)
                 cfg.model['in_channels'] = 6
                 cfg.model['ckpt_path'] = pth_path
@@ -190,7 +217,15 @@ class SegmentApp:
                     tk.Label(self.result_label, text=text, font=MONO_FONT, fg=hex_color).pack()
 
                 # Show the Open3D window in a separate thread
-                threading.Thread(target=lambda: o3d.visualization.draw_geometries([pcd])).start()
+                view = self.load_view_params(self.pcd_path.get())
+                if view:
+                    threading.Thread(target=lambda: o3d.visualization.draw_geometries([pcd],
+                                                                                    zoom=view["zoom"],
+                                                                                    front=view["front"],
+                                                                                    lookat=view["lookat"],
+                                                                                    up=view["up"])).start()
+                else:
+                    threading.Thread(target=lambda: o3d.visualization.draw_geometries([pcd])).start()
 
             except Exception as e:
                 self.status_label.config(text="Error occurred", fg="red")
