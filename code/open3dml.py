@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
+
 # Load and convert point cloud
 pcd = o3d.io.read_point_cloud("../SLAM_output/apartment.ply")
 points = np.asarray(pcd.points).astype(np.float32)
@@ -32,7 +33,7 @@ pths = [
 ]
 ModelClasses = [KPFCNN, PointTransformer, RandLANet]
 model_path = "/home/kevin-zhou/Desktop/UMich/Winter2025/3DCV_final_project/model/"
-which = 0
+which = 2
 cfg = ml3d.utils.Config.load_from_file(model_path + ymls[which])
 cfg.model['in_channels'] = 6
 cfg.model['ckpt_path'] = model_path + pths[which]
